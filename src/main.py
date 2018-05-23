@@ -251,6 +251,7 @@ class as_set_proccess():
         self.adversarial_ASes = Set([])
         self.adversarial_bw = -1.0
         self.interations = 0
+	self.multipath = 0 #Wladimir
 
     def reset(self):
         self.original = {}  # original ASes in each day, before any set or grouping
@@ -737,7 +738,7 @@ class as_set_proccess():
             customers[node] = succ.copy()
         return tmp_cone, customers
 
-    def guard_selection(self, user):
+    def guard_selection(self, user , multipath):
         if (self.selection == TOR):
             rnd = random.uniform(0.01, self.today_bw)
             tmp_bw = 0.0
@@ -782,11 +783,27 @@ class as_set_proccess():
             rnd = random.uniform(0.01, self.today_bw)
             tmp_bw = 0.0
             out_ = None
-            for q in self.today_all:  # q = (quatna.id,quanta.bw,quanta.adv)
-                tmp_bw += q[1]
-                if tmp_bw >= rnd:
-                    out_ = q
-                    break
+	    # Wladimir multipath case
+	    if (multipath>0):
+	        rnd_mp = []
+		tmp_mp = []
+		for i in xrange(0,multipath):
+		    rnd_mp.append(random.uniform(0.01, self.today_bw))
+	            tmp_mp.append(0.0)
+	   	for q in self.today_all:
+                    for j in xrange(0,len(tmp_mp)):	
+		         tmp_mp[j] += q[1]
+			 if tmp_mp[j] >= rnd_mp[j]:
+		             out_ = q
+	                     break 
+            #Wladimir: End multipath
+
+	    else: 
+                for q in self.today_all:  # q = (quatna.id,quanta.bw,quanta.adv)
+                    tmp_bw += q[1]
+                    if tmp_bw >= rnd:
+                        out_ = q
+                        break
 
             user[2] = out_[2]
             user[1] = out_[0]
@@ -804,7 +821,7 @@ class as_set_proccess():
             q.id = sub_id + d + parts[2] + d + parts[3] + d + parts[4]
         return sset.id
 
-    def update_my_guard_set(self, user,counterQ,counterS,counterSS):
+    def update_my_guard_set(self, user,counterQ,counterS,counterSS , multipath):
         #############################
         # extract the as set and its sub set
         setid, subsetid, qunataid = self.get_set_subset_quantum(user[1])
@@ -882,7 +899,7 @@ class as_set_proccess():
             if False:
                 logging.debug("Oops, we do not have any providers acitve in our sets for user %s", user[0])
                 # non of my ancestors are in the sets, go and select like a new user
-                self.guard_selection(user)
+                self.guard_selection(user, multipath) #Wladimir multipath
                 logging.debug("change in SET from scratch (to %s) for user %s", user[1], user[0])
                 # logging.info("%s:start fresh: %s",self.date, user)
 
@@ -927,7 +944,7 @@ class as_set_proccess():
                 if (len(common) == 0):
                     logging.debug("Oops, we do not have any providers acitve in our sets for user %s", user[0])
                     # non of my ancestors are in the sets, go and select like a new user
-                    self.guard_selection(user)
+                    self.guard_selection(user , multipath) #Wladimir multipath
                     logging.debug("change in SET from scratch (to %s) for user %s", user[1], user[0])
                     # logging.info("%s:start fresh: %s",self.date, user)
 
@@ -1057,7 +1074,7 @@ class as_set_proccess():
         else:
             return {}
 
-    def update_users_status(self, w, input, output,counterQ,counterS,counterSS):
+    def update_users_status(self, w, input, output,counterQ,counterS,counterSS , multipath):
 
         t1 = time.time()
         cnt = 0
@@ -1083,10 +1100,10 @@ class as_set_proccess():
 
             if user[1] == None:
                 logging.debug("P:%d: User %s has no guard ", w, user[0])
-                self.guard_selection(user)
+                self.guard_selection(user , multipath) #Wladimir
             else:
                 logging.debug("P:%d: User %s update its guard ", w, user[0])
-                self.update_my_guard_set(user,counterQ,counterS,counterSS)
+                self.update_my_guard_set(user,counterQ,counterS,counterSS , multipath)
             output.put(user)
             set_id = user[1].split(classes.DELIMIT)[0]
             self.today_sets[set_id].assigned_users += 1
@@ -1150,7 +1167,7 @@ class as_set_proccess():
 
         return users, tmp_list
 
-    def single_guard(self, users, relays, total_bw):
+    def single_guard(self, users, relays, total_bw ,multi_path): # Single guards
 
         tmp_list = []
 
@@ -1159,19 +1176,40 @@ class as_set_proccess():
                 # assign a guard
                 rnd = random.uniform(0.00001, total_bw - 0.00001)
                 tmp = 0.0
+		#Wladimir
+		# for multiple guards by multi-path
+		if multi_path > 0:
+			rnd_mp = []
+			tmp_mp = []			
+			for h in xrange (0,int(multi_path)):
+				rnd_mp.append(random.uniform(0.00001, total_bw - 0.00001))
+				tmp_mp.append(0.0)
 
-                for ip in relays:
-                    tmp += float(relays[ip]["bandwidth"])
-                    if tmp >= rnd:
-                        user[1] = ip
-                        user[2] = relays[ip]["adversary"]
-                        break
-                if (user[1] == None):
-                    print "we should assign a guard to this user"
-                    exit(0)
+			for ip in relays:
+				for j in xrange(0,len(tmp_mp)):
+					tmp_mp[j] += float(relays[ip]["bandwidth"])
+					if tmp_mp[j] >= rnd_mp[j]:
+						user[1] = ip
+		               			user[2] = relays[ip]["adversary"]
+		                		break
+			if (user[1] == None):
+	    			print "we should assign a guard to this user"
+	    			exit(0)			
+		else:
+		#End Wladimir
+		        for ip in relays:
+		            tmp += float(relays[ip]["bandwidth"])
+		            if tmp >= rnd:
+		                user[1] = ip
+		                user[2] = relays[ip]["adversary"]
+		                break
+		        if (user[1] == None):
+		            print "we should assign a guard to this user"
+		            exit(0)
 
             if user[2] != 0.0:
-                tmp_list.append(user[0])
+                tmp_list.append(user[0])  ## Here the client's guard is controlled by an adversary
+
         return tmp_list
 
     def core_single_guard(self, w, input, output, relays, total_bw):
@@ -1407,7 +1445,7 @@ class as_set_proccess():
             corrupted_gs = dict((g, []) for g in self.our_adversaries)  # needed for jamie's evaluation
             gsTree, compromised_jamie_users, median_bw,jamies_sets, jamie_adv, target_compromised,jamie_waiting_days,jamieIamBroken = algorithm.test_comm_adv_merge(gsTree, relays, corrupted_gs,
                                                                                        jamies_users,day_counter,file_name,anon_loging,
-                                                                                       NU=self.number_of_users, KTR=self.DELETE_THRESHOLD,CTR= self.CREATE_THRESHOLD, advs = self.ADVERSARY_TYPE, relays_adv = jamie_adv, IamCompromised = target_compromised, waiting_days=jamie_waiting_days, IamBroken = jamieIamBroken)
+                                                                                       NU=self.number_of_users, KTR=self.DELETE_THRESHOLD,CTR= self.CREATE_THRESHOLD, advs = self.ADVERSARY_TYPE, relays_adv = jamie_adv, IamCompromised = target_compromised, waiting_days=jamie_waiting_days, IamBroken = jamieIamBroken , MP = self.multipath) #Wladimir
             self.jamies_users_compromised |= set(compromised_jamie_users)
             self.jamies_users_compromised_rate = float(len(self.jamies_users_compromised) / float(self.number_of_users))
             self.jamies_median_bw = median_bw
@@ -1424,12 +1462,12 @@ class as_set_proccess():
             bw_relays = [relays[i]["bandwidth"] for i in relays]
             total_bw_relays = sum(bw_relays)
             self.single_guard_median_bw = numpy.median(bw_relays)
-            single_guard_users_compromised = self.single_guard(single_guard_users, relays, total_bw_relays)
+            single_guard_users_compromised = self.single_guard(single_guard_users, relays, total_bw_relays , self.multipath)
             self.single_guard_users_compromised |= Set(single_guard_users_compromised)
             self.single_guard_users_compromised_rate = float(
                 len(self.single_guard_users_compromised) / float(self.number_of_users))
             # print '   OUT:', self.single_guard_users_compromised
-            # print ' rate   ', self.single_guard_users_compromised_rate
+            #print ' rate   ', self.single_guard_users_compromised_rate
             # TODO: skip guards with None in asn in our parser, remove the deletes, anyway fix the attacker part, now work on the single guard
             t_single_guard = time.time()
             print name, " Single Guard took: ", t_single_guard - t_jamie
@@ -1481,6 +1519,7 @@ class as_set_proccess():
 
                 ####################################### Build Guard Set ###############################
                 self.today_sets = copy.copy(self.update_and_build_sets(as_list_tmp))
+		
 
                 ####################################### Update Guard Set ##############################
                 self.final_update()
@@ -1524,7 +1563,7 @@ class as_set_proccess():
                     for l in range(classes.PROCESSES):
                         task_queue.put('STOP')
                     for w in xrange(classes.PROCESSES):
-                        p = Process(target=self.update_users_status, args=(w, task_queue, results_queue,counterQ,counterS,counterSS,))
+                        p = Process(target=self.update_users_status, args=(w, task_queue, results_queue,counterQ,counterS,counterSS,self.multipath))
                         p.daemon = False
                         processes.append(p)
                         p.start()
@@ -1533,7 +1572,9 @@ class as_set_proccess():
                     for r in range(self.number_of_users):
                         usr = results_queue.get()
                         results_queue.task_done()
+			#print "checnkin user", usr
                         if usr[2] != 0:
+                            #print "compromised user", usr
                             self.compromised_users |= Set([usr[0]])
                         results.append(usr)
                         # logging.info("%s:%s", self.date, usr)
@@ -1634,7 +1675,7 @@ class as_set_proccess():
                     for rr in relay_bws:
                         log_file.write("BW-SINGLE-BW:DAY:{0}:Q:0:Sub:0:BW:{1}:\n".format(day_counter, rr))
                     log_file.close()
-
+		
 
 
         print "total time: ", time.time() - time_start
@@ -3027,6 +3068,7 @@ parser.add_argument("-f", "--adv_fraction", type=float,
                     help="the bw fraction of adversaries we need to add to the network ", default=0.0)
 parser.add_argument("-p", "--processes", type=int, help="number of processes ", default=4)
 parser.add_argument("-i", "--iterations", type=int, help="number of iterations ", default=1)
+parser.add_argument("-m", "--multipath", type=int, help="number of multiple guards in multi-path", default=0) #Wladimir
 #-u 500000 -a 7 -c 30000 -d 15000 -f 0.05 -i 15 -p 4
 args = parser.parse_args()
 users = args.users
@@ -3038,11 +3080,13 @@ adv_num = args.adv_num
 adv_fraction = args.adv_fraction
 classes.PROCESSES = args.processes
 interations = args.iterations
+multipath_ = args.multipath #Wladimir
 
 for i in range(interations):
     print "iteration ", i
     proccess1 = as_set_proccess()
     proccess1.ADVERSARY_TYPE = adv
+    proccess1.multipath = multipath_ #Wladimir
     proccess1.number_of_users = users
     proccess1.MINIMUM_SETS = min_sets
     proccess1.DELETE_THRESHOLD = dthreshold
